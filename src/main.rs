@@ -1,9 +1,13 @@
 use anyhow::{bail, Result};
-use std::fs::File;
-use std::io::prelude::*;
+use sqlite_starter_rust::header::PageHeader;
+use std::{
+    fs::File,
+    io::{prelude::*, SeekFrom},
+};
 
 fn main() -> Result<()> {
-    // Parse arguments
+    // TODO: Switch to clap
+
     let args = std::env::args().collect::<Vec<_>>();
     match args.len() {
         0 | 1 => bail!("Missing <database path> and <command>"),
@@ -23,11 +27,37 @@ fn main() -> Result<()> {
             #[allow(unused_variables)]
             let page_size = u16::from_be_bytes([header[16], header[17]]);
 
-            // You can use print statements as follows for debugging, they'll be visible when running tests.
-            println!("Logs from your program will appear here!");
+            let mut page_header = [0; 8];
+            file.read_exact(&mut page_header)?;
+            let page_header = PageHeader::parse(&page_header)?;
+
+            println!("page_header: {:?}", page_header);
+
+            let mut cell_content_addresses = vec![];
+
+            for c in 0..page_header.number_of_cells {
+                println!("c: {c}");
+
+                let mut cell_pointer = [0; 2];
+                file.read_exact(&mut cell_pointer)?;
+
+                let cell_content_address = u16::from_be_bytes(cell_pointer[0..2].try_into()?);
+
+                cell_content_addresses.push(cell_content_address);
+            }
+
+            println!("cell_content_addresses: {:?}", cell_content_addresses);
+
+            // file.rewind()?; // TODO: avoid rewind?
+
+            // for cell_content_address in &cell_content_addresses {
+            //     file.seek(SeekFrom::Start(*cell_content_address as u64))?;
+
+            //     let mut foo = [0; 9];
+            // }
 
             // Uncomment this block to pass the first stage
-            // println!("database page size: {}", page_size);
+            println!("database page size: {}", page_size);
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }

@@ -1,3 +1,5 @@
+use std::io::Read;
+
 const IS_FIRST_BIT_ZERO_MASK: u8 = 0b10000000;
 const LAST_SEVEN_BITS_MASK: u8 = 0b01111111;
 
@@ -40,6 +42,20 @@ fn read_usable_bytes(stream: &[u8]) -> Vec<u8> {
 
     usable_bytes
 }
+
+// fn read_usable_bytes_from_reader<R: Read>(reader: R) -> Vec<u8> {
+//     let mut usable_bytes = vec![];
+
+//     for i in 0..9 {
+//         let byte = stream[i];
+//         usable_bytes.push(byte);
+//         if starts_with_zero(byte) {
+//             break;
+//         }
+//     }
+
+//     usable_bytes
+// }
 
 fn starts_with_zero(byte: u8) -> bool {
     (byte & IS_FIRST_BIT_ZERO_MASK) == 0
