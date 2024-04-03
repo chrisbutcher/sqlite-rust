@@ -1,5 +1,4 @@
 use anyhow::{bail, Error, Result};
-use itertools::Itertools;
 use sqlite_starter_rust::{
     header::PageHeader,
     record::{self, parse_record},
