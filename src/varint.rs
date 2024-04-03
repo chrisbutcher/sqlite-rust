@@ -32,13 +32,13 @@ pub fn parse_varint_from_reader<R: Read>(reader: &mut R) -> (usize, usize) {
 
             let res = (value << usable_size) + usable_value(usable_size, usable_byte) as usize;
 
-            println!("bitshifted value: {value}");
-            println!("bitshifted res: {res}");
+            // println!("bitshifted value: {value}");
+            // println!("bitshifted res: {res}");
 
             res
         });
 
-    println!("final varint value. varint: {varint}, bytes_read: {bytes_read}");
+    // println!("final varint value. varint: {varint}, bytes_read: {bytes_read}");
 
     (varint, bytes_read)
 }
@@ -73,7 +73,7 @@ fn read_usable_bytes_from_reader<R: Read>(reader: &mut R) -> Vec<u8> {
         let mut byte = [0u8; 1];
         reader.read_exact(&mut byte).unwrap();
 
-        println!("varint byte read: {:?}", byte);
+        // println!("varint byte read: {:?}", byte);
 
         usable_bytes.push(byte[0]);
         if starts_with_zero(byte[0]) {
@@ -81,7 +81,7 @@ fn read_usable_bytes_from_reader<R: Read>(reader: &mut R) -> Vec<u8> {
         }
     }
 
-    println!("usable_bytes: {:?}", usable_bytes);
+    // println!("usable_bytes: {:?}", usable_bytes);
 
     usable_bytes
 }
