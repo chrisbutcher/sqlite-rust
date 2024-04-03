@@ -75,29 +75,33 @@ impl SerialValue {
             SerialType::Int8 => {
                 let mut buffer = [0; 1];
                 reader.read_exact(&mut buffer)?;
+
                 Ok(SerialValue::Int8(i8::from_be_bytes(buffer)))
             }
             SerialType::Int16 => {
                 let mut buffer = [0; 2];
                 reader.read_exact(&mut buffer)?;
+
                 Ok(SerialValue::Int16(i16::from_be_bytes(buffer)))
             }
             SerialType::Int24 => {
                 let mut buffer = [0; 3];
                 reader.read_exact(&mut buffer)?;
-                // here we need to mark
+
                 Ok(SerialValue::Int24(i32::from_be_bytes([
                     0, buffer[0], buffer[1], buffer[2],
                 ])))
             }
             SerialType::Int32 => {
                 let mut buffer = [0; 4];
-                reader.read_exact(&mut buffer);
+                reader.read_exact(&mut buffer)?;
+
                 Ok(SerialValue::Int32(i32::from_be_bytes(buffer)))
             }
             SerialType::Int48 => {
                 let mut buffer = [0; 6];
                 reader.read_exact(&mut buffer)?;
+
                 Ok(SerialValue::Int48(i64::from_be_bytes([
                     0, 0, buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5],
                 ])))
@@ -105,11 +109,13 @@ impl SerialValue {
             SerialType::Int64 => {
                 let mut buffer = [0; 8];
                 reader.read_exact(&mut buffer)?;
+
                 Ok(SerialValue::Int64(i64::from_be_bytes(buffer)))
             }
             SerialType::Float => {
                 let mut buffer = [0; 8];
                 reader.read_exact(&mut buffer)?;
+
                 Ok(SerialValue::Float(f64::from_be_bytes(buffer)))
             }
             SerialType::Zero => Ok(SerialValue::Zero),
@@ -117,12 +123,14 @@ impl SerialValue {
             SerialType::Blob(size) => {
                 let mut buffer = vec![0; size.clone() as usize];
                 reader.read_exact(&mut buffer)?;
+
                 Ok(SerialValue::Blob(buffer))
             }
             SerialType::String(size) => {
                 let mut buffer = vec![0; size.clone() as usize];
                 reader.read_exact(&mut buffer)?;
                 let value = String::from_utf8(buffer)?;
+
                 Ok(SerialValue::String(value))
             }
         }
