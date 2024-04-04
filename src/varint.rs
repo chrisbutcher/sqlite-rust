@@ -62,7 +62,7 @@ fn read_usable_bytes(stream: &[u8]) -> Vec<u8> {
 fn read_usable_bytes_from_reader<R: Read>(reader: &mut R) -> Vec<u8> {
     let mut usable_bytes = vec![];
 
-    for i in 0..9 {
+    for _i in 0..9 {
         let mut byte = [0u8; 1];
         reader.read_exact(&mut byte).unwrap();
 
@@ -113,7 +113,6 @@ mod tests {
         assert_eq!(bytes_read, 2);
 
         let (num, bytes_read) = parse_varint(&a[total_bytes_read..]);
-        total_bytes_read += bytes_read;
         assert_eq!(num, 116);
         assert_eq!(bytes_read, 1);
     }

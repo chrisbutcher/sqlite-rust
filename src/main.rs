@@ -1,24 +1,19 @@
-use anyhow::{bail, Error, Result};
-use sqlite_starter_rust::{
-    header::PageHeader,
-    record::{self, parse_record},
-    schema::Schema,
-    types::*,
-    varint,
-};
+use anyhow::{bail, Result};
+use sqlite_starter_rust::{header::PageHeader, types::*, varint};
 use std::{
-    env,
-    fs::{read, File},
+    fs::File,
     io::{prelude::*, Cursor, SeekFrom},
     path::Path,
 };
 
+#[allow(dead_code)]
 struct Record {
     row_id: usize,
     serial_types: Vec<SerialType>,
     serial_values: Vec<SerialValue>,
 }
 
+#[allow(dead_code)]
 struct DatabaseHeader {
     page_size: u16,
     page_count: u32,

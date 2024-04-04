@@ -1,5 +1,5 @@
-use anyhow::{Error, Result};
-use std::io::{prelude::*, Read};
+use anyhow::Error;
+use std::io::Read;
 
 #[derive(Debug, PartialEq)]
 pub enum SerialType {
@@ -111,13 +111,13 @@ impl SerialValue {
             SerialType::Zero => Ok(SerialValue::Zero),
             SerialType::One => Ok(SerialValue::One),
             SerialType::Blob(size) => {
-                let mut buf = vec![0; size.clone() as usize];
+                let mut buf = vec![0; *size as usize];
                 reader.read_exact(&mut buf)?;
 
                 Ok(SerialValue::Blob(buf))
             }
             SerialType::String(size) => {
-                let mut buf = vec![0; size.clone() as usize];
+                let mut buf = vec![0; *size as usize];
                 reader.read_exact(&mut buf)?;
                 let value = String::from_utf8(buf)?;
 
