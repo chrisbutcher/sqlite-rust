@@ -7,6 +7,7 @@ use std::{
 };
 
 #[allow(dead_code)]
+#[derive(Debug)]
 struct Record {
     row_id: usize,
     serial_types: Vec<SerialType>,
@@ -15,7 +16,7 @@ struct Record {
 
 #[allow(dead_code)]
 struct DatabaseHeader {
-    page_size: u16,
+    page_size: u32,
     page_count: u32,
 }
 
@@ -24,7 +25,13 @@ impl DatabaseHeader {
         let mut header = [0; 100];
         reader.read_exact(&mut header)?;
 
-        let page_size = u16::from_be_bytes([header[16], header[17]]);
+        let mut page_size = u16::from_be_bytes([header[16], header[17]]) as u32;
+
+        if page_size == 1 {
+            // If page_size is 1, this should be interpreted as 65,536
+            page_size = 65_536;
+        }
+
         let page_count = u32::from_be_bytes([header[28], header[29], header[30], header[31]]);
 
         Ok(DatabaseHeader {
@@ -34,6 +41,10 @@ impl DatabaseHeader {
     }
 }
 
+// TODO:
+// * Error on unhandled cases like overflow page needed.
+// * Detect which pages are root pages based on master table.
+// * Assume root page is table leaf page for now, but handle if it's not.
 fn main() -> Result<()> {
     // TODO: Switch to clap
     let args = std::env::args().collect::<Vec<_>>();
@@ -66,26 +77,20 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn read_records(file_name: &Path) -> anyhow::Result<(u16, Vec<Record>)> {
+fn read_records(file_name: &Path) -> anyhow::Result<(u32, Vec<Record>)> {
     let mut file = File::open(file_name)?;
 
     let database_header = DatabaseHeader::new(&mut file)?;
 
     // Reading root page
-    let mut page_bytes = vec![0; database_header.page_size as usize - 100];
-    file.read_exact(&mut page_bytes)?;
-
-    let mut page_cursor = Cursor::new(&page_bytes);
-    page_cursor.seek(SeekFrom::Start(0))?;
-
     let mut page_header_bytes = [0; 8];
-    page_cursor.read_exact(&mut page_header_bytes)?;
+    file.read_exact(&mut page_header_bytes)?;
 
     let page_header = PageHeader::parse(&page_header_bytes)?;
 
-    let cell_pointers = build_cell_pointers(&page_header, &mut page_cursor)?;
+    let cell_pointers = build_cell_pointers(&page_header, &mut file)?;
 
-    let payloads = build_payloads(&page_header, cell_pointers, &mut page_cursor)?;
+    let payloads = build_payloads(&page_header, cell_pointers, &mut file)?;
 
     match page_header.page_type {
         sqlite_starter_rust::header::BTreePage::LeafTable => {
@@ -173,7 +178,7 @@ fn build_payloads<R: Read + std::io::Seek>(
             let mut payloads = vec![];
 
             for offset in cell_pointers {
-                reader.seek(SeekFrom::Start(offset as u64 - 100))?; // TODO vary this behavior for pages other than page 1
+                reader.seek(SeekFrom::Start(offset as u64))?;
 
                 let (payload_size, _bytes_read_1) = varint::parse_varint_from_reader(reader);
                 let (row_id, _bytes_read_2) = varint::parse_varint_from_reader(reader);
@@ -197,11 +202,11 @@ fn build_cell_pointers<R: Read>(
     page_header: &PageHeader,
     reader: &mut R,
 ) -> anyhow::Result<Vec<u16>> {
-    // TODO branch on page_header.page_type. For now, assume it's a table leaf cell.
     let mut cell_pointers = Vec::with_capacity(page_header.number_of_cells.into());
     let mut cell_pointer_buffer = [0; 2];
     for _ in 0..page_header.number_of_cells {
         reader.read_exact(&mut cell_pointer_buffer)?;
+
         cell_pointers.push(u16::from_be_bytes([
             cell_pointer_buffer[0],
             cell_pointer_buffer[1],
