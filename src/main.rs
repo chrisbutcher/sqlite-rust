@@ -15,15 +15,16 @@ struct Record {
 }
 
 #[allow(dead_code)]
-struct DatabaseHeader {
+struct Database {
     page_size: u32,
     page_count: u32,
+    database_file: File,
 }
 
-impl DatabaseHeader {
-    pub fn new<R: Read>(reader: &mut R) -> anyhow::Result<Self> {
+impl Database {
+    pub fn open(mut database_file: File) -> anyhow::Result<Self> {
         let mut header = [0; 100];
-        reader.read_exact(&mut header)?;
+        database_file.read_exact(&mut header)?;
 
         let mut page_size = u16::from_be_bytes([header[16], header[17]]) as u32;
 
@@ -34,10 +35,64 @@ impl DatabaseHeader {
 
         let page_count = u32::from_be_bytes([header[28], header[29], header[30], header[31]]);
 
-        Ok(DatabaseHeader {
+        Ok(Database {
             page_size,
             page_count,
+            database_file,
         })
+    }
+
+    pub fn seek_to_page(&mut self, page_num: u32) -> anyhow::Result<Page> {
+        // TODO: Error if page num is out of range.
+        let mut seek_offset = (page_num - 1) * self.page_size;
+
+        if page_num == 1 {
+            // Skip first 100 bytes of page 1 to account for the database header.
+            seek_offset += 100;
+        }
+
+        self.database_file
+            .seek(SeekFrom::Start(seek_offset as u64))?;
+
+        let mut page_header_bytes = [0; 8];
+        self.database_file.read_exact(&mut page_header_bytes)?;
+        let header = PageHeader::parse(&page_header_bytes)?;
+
+        Ok(Page { header })
+    }
+}
+
+#[derive(Debug)]
+struct Page {
+    header: PageHeader,
+}
+
+impl Page {
+    pub fn fetch_cell_pointers<R: Read + std::io::Seek>(
+        &self,
+        reader: &mut R,
+    ) -> anyhow::Result<Vec<u16>> {
+        let cell_pointers = Self::build_cell_pointers(&self.header, reader)?;
+
+        Ok(cell_pointers)
+    }
+
+    fn build_cell_pointers<R: Read>(
+        page_header: &PageHeader,
+        reader: &mut R,
+    ) -> anyhow::Result<Vec<u16>> {
+        let mut cell_pointers = Vec::with_capacity(page_header.number_of_cells.into());
+        let mut cell_pointer_buffer = [0; 2];
+        for _ in 0..page_header.number_of_cells {
+            reader.read_exact(&mut cell_pointer_buffer)?;
+
+            cell_pointers.push(u16::from_be_bytes([
+                cell_pointer_buffer[0],
+                cell_pointer_buffer[1],
+            ]))
+        }
+
+        Ok(cell_pointers)
     }
 }
 
@@ -55,18 +110,20 @@ fn main() -> Result<()> {
     }
 
     let db_file_path = Path::new(&args[1]);
+    let db_file = File::open(db_file_path)?;
+    let database = Database::open(db_file)?;
 
     // Parse command and act accordingly
     let command = &args[2];
     match command.as_str() {
         ".dbinfo" => {
-            let (page_size, records) = read_records(db_file_path)?;
+            let (page_size, records) = read_records(database)?;
 
             println!("database page size: {}", page_size);
             println!("number of tables: {}", records.len());
         }
         ".tables" => {
-            let (_page_size, records) = read_records(db_file_path)?;
+            let (_page_size, records) = read_records(database)?;
             let table_names = get_table_names(&records).join(" ");
 
             println!("{table_names}");
@@ -77,30 +134,26 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn read_records(file_name: &Path) -> anyhow::Result<(u32, Vec<Record>)> {
-    let mut file = File::open(file_name)?;
+fn read_records(mut database: Database) -> anyhow::Result<(u32, Vec<Record>)> {
+    let page = database.seek_to_page(1)?;
+    let cell_pointers = page.fetch_cell_pointers(&mut database.database_file)?;
 
-    let database_header = DatabaseHeader::new(&mut file)?;
+    let payloads = build_payloads(&page, &cell_pointers, &mut database.database_file)?;
 
-    // Reading root page
-    let mut page_header_bytes = [0; 8];
-    file.read_exact(&mut page_header_bytes)?;
+    for page_i in 2..=database.page_count {
+        let next_page = database.seek_to_page(page_i)?;
+        println!("page #{page_i}: {:?}", next_page);
+    }
 
-    let page_header = PageHeader::parse(&page_header_bytes)?;
-
-    let cell_pointers = build_cell_pointers(&page_header, &mut file)?;
-
-    let payloads = build_payloads(&page_header, cell_pointers, &mut file)?;
-
-    match page_header.page_type {
+    match page.header.page_type {
         sqlite_starter_rust::header::BTreePage::LeafTable => {
             let records = build_records(payloads)?;
 
-            Ok((database_header.page_size, records))
+            Ok((database.page_size, records))
         }
         _ => todo!(
             "handle other page types ({:?}) in read_records",
-            page_header.page_type
+            page.header.page_type
         ),
     }
 }
@@ -169,16 +222,16 @@ fn build_records(payloads: Vec<(usize, usize, Vec<u8>)>) -> anyhow::Result<Vec<R
 }
 
 fn build_payloads<R: Read + std::io::Seek>(
-    page_header: &PageHeader,
-    cell_pointers: Vec<u16>,
+    page: &Page,
+    cell_pointers: &Vec<u16>,
     reader: &mut R,
 ) -> anyhow::Result<Vec<(usize, usize, Vec<u8>)>> {
-    match page_header.page_type {
+    match page.header.page_type {
         sqlite_starter_rust::header::BTreePage::LeafTable => {
             let mut payloads = vec![];
 
             for offset in cell_pointers {
-                reader.seek(SeekFrom::Start(offset as u64))?;
+                reader.seek(SeekFrom::Start(*offset as u64))?;
 
                 let (payload_size, _bytes_read_1) = varint::parse_varint_from_reader(reader);
                 let (row_id, _bytes_read_2) = varint::parse_varint_from_reader(reader);
@@ -193,25 +246,7 @@ fn build_payloads<R: Read + std::io::Seek>(
         }
         _ => todo!(
             "handle other page types ({:?}) in build_payloads",
-            page_header.page_type
+            page.header.page_type
         ),
     }
-}
-
-fn build_cell_pointers<R: Read>(
-    page_header: &PageHeader,
-    reader: &mut R,
-) -> anyhow::Result<Vec<u16>> {
-    let mut cell_pointers = Vec::with_capacity(page_header.number_of_cells.into());
-    let mut cell_pointer_buffer = [0; 2];
-    for _ in 0..page_header.number_of_cells {
-        reader.read_exact(&mut cell_pointer_buffer)?;
-
-        cell_pointers.push(u16::from_be_bytes([
-            cell_pointer_buffer[0],
-            cell_pointer_buffer[1],
-        ]))
-    }
-
-    Ok(cell_pointers)
 }
