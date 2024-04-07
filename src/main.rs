@@ -28,6 +28,11 @@ impl Database {
 
         let mut page_size = u16::from_be_bytes([header[16], header[17]]) as u32;
 
+        let reserved_end_of_page_space = u8::from_be_bytes([header[20]]) as u32;
+        if reserved_end_of_page_space > 0 {
+            bail!("Unhandled reserved_end_of_page_space: {reserved_end_of_page_space}");
+        }
+
         if page_size == 1 {
             // If page_size is 1, this should be interpreted as 65,536
             page_size = 65_536;
@@ -138,7 +143,12 @@ fn read_records(mut database: Database) -> anyhow::Result<(u32, Vec<Record>)> {
     let page = database.seek_to_page(1)?;
     let cell_pointers = page.fetch_cell_pointers(&mut database.database_file)?;
 
-    let payloads = build_payloads(&page, &cell_pointers, &mut database.database_file)?;
+    let payloads = build_payloads(
+        database.page_size,
+        &page,
+        &cell_pointers,
+        &mut database.database_file,
+    )?;
 
     for page_i in 2..=database.page_count {
         let next_page = database.seek_to_page(page_i)?;
@@ -222,6 +232,7 @@ fn build_records(payloads: Vec<(usize, usize, Vec<u8>)>) -> anyhow::Result<Vec<R
 }
 
 fn build_payloads<R: Read + std::io::Seek>(
+    database_page_size: u32,
     page: &Page,
     cell_pointers: &Vec<u16>,
     reader: &mut R,
@@ -238,6 +249,27 @@ fn build_payloads<R: Read + std::io::Seek>(
 
                 let mut payload_bytes = vec![0; payload_size];
                 reader.read_exact(&mut payload_bytes)?;
+
+                // Calculate page content overflow
+                let u = database_page_size;
+                let p = payload_size as u32;
+
+                let x = u - 35;
+                let m = ((u - 12) * 32 / 255) - 23;
+                let k = m + ((p - m) % (u - 4));
+
+                // If P<=X then all P bytes of payload are stored directly on the btree page without overflow.
+                // If P>X and K<=X then the first K bytes of P are stored on the btree page and the remaining P-K bytes are stored on overflow pages.
+                // If P>X and K>X then the first M bytes of P are stored on the btree page and the remaining P-M bytes are stored on overflow pages.
+                //
+                //   The overflow thresholds are designed to give a minimum fanout of 4 for index b-trees and to make sure enough of the payload is on
+                // the b-tree page that the record header can usually be accessed without consulting an overflow page. In hindsight, the designer of
+                // the SQLite b-tree logic realized that these thresholds could have been made much simpler. However, the computations cannot be changed
+                // without resulting in an incompatible file format. And the current computations work well, even if they are a little complex.
+
+                if p > x {
+                    bail!("Unhandled overflow");
+                }
 
                 payloads.push((payload_size, row_id, payload_bytes));
             }
