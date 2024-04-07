@@ -6,19 +6,22 @@ use std::{
     path::Path,
 };
 
-#[allow(dead_code)]
+struct Database {
+    page_size: u32,
+    page_count: u32,
+    database_file: File,
+}
+#[derive(Debug)]
+struct Page {
+    header: PageHeader,
+}
+
+#[allow(dead_code)] // TODO Remove
 #[derive(Debug)]
 struct Record {
     row_id: usize,
     serial_types: Vec<SerialType>,
     serial_values: Vec<SerialValue>,
-}
-
-#[allow(dead_code)]
-struct Database {
-    page_size: u32,
-    page_count: u32,
-    database_file: File,
 }
 
 impl Database {
@@ -48,7 +51,10 @@ impl Database {
     }
 
     pub fn seek_to_page(&mut self, page_num: u32) -> anyhow::Result<Page> {
-        // TODO: Error if page num is out of range.
+        if page_num < 1 || page_num > self.page_count {
+            bail!("seek_to_page: page_num out of bounds: {page_num}");
+        }
+
         let mut seek_offset = (page_num - 1) * self.page_size;
 
         if page_num == 1 {
@@ -65,11 +71,6 @@ impl Database {
 
         Ok(Page { header })
     }
-}
-
-#[derive(Debug)]
-struct Page {
-    header: PageHeader,
 }
 
 impl Page {
@@ -102,9 +103,7 @@ impl Page {
 }
 
 // TODO:
-// * Error on unhandled cases like overflow page needed.
 // * Detect which pages are root pages based on master table.
-// * Assume root page is table leaf page for now, but handle if it's not.
 fn main() -> Result<()> {
     // TODO: Switch to clap
     let args = std::env::args().collect::<Vec<_>>();
@@ -132,8 +131,26 @@ fn main() -> Result<()> {
             let table_names = get_table_names(&records).join(" ");
 
             println!("{table_names}");
+        } //  => bail!("Missing or invalid command passed: {}", command),
+        _ => {
+            // Sanity check that it is surrounded by double quotes (or just do this in nom?)
+            // Parse query
+            // Plan lookups
+            // Execute
+            // Aggregate
+            // Present
+
+            // "SELECT COUNT(*) FROM apples"
+            // "SELECT name FROM apples"
+            // "SELECT name, color FROM apples"
+            // "SELECT name, color FROM apples WHERE color = 'Yellow'"
+            // "SELECT id, name FROM superheroes WHERE eye_color = 'Pink Eyes'"
+            // "SELECT id, name FROM companies WHERE country = 'eritrea'"
+
+            // TODO: New module with these as test cases.
+
+            println!("{}", command);
         }
-        _ => bail!("Missing or invalid command passed: {}", command),
     }
 
     Ok(())
