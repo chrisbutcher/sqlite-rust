@@ -25,3 +25,6 @@ nom = "7.0.0"        # for parsing
 peg = "0.7.0"        # for parsing
 regex = "1.5.4"      # for parsing
 thiserror = "1.0.32" # error handling
+
+proc-macro2 = "1.0.79"
+clap = { version = "4.5.4", features = ["derive"] }

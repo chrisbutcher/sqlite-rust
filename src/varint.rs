@@ -10,6 +10,7 @@ const LAST_SEVEN_BITS_MASK: u8 = 0b01111111;
 pub fn parse_varint(stream: &[u8]) -> (usize, usize) {
     let usable_bytes = read_usable_bytes(stream);
     let bytes_read = usable_bytes.len();
+
     let varint = usable_bytes
         .into_iter()
         .enumerate()

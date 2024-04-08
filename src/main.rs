@@ -1,8 +1,9 @@
 use anyhow::{bail, Result};
-use sqlite_starter_rust::{header::PageHeader, types::*, varint};
+use sqlite_starter_rust::{header::*, query_parser::*, types::*, varint};
 use std::{
     fs::File,
     io::{prelude::*, Cursor, SeekFrom},
+    os::macos::raw,
     path::Path,
 };
 
@@ -102,24 +103,43 @@ impl Page {
     }
 }
 
+use std::path::PathBuf;
+
+use clap::{arg, command, Parser, Subcommand};
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Name of the person to greet
+    // #[arg(short, long)]
+    db_path: PathBuf,
+
+    /// Number of times to greet
+    // #[arg(short, long, default_value_t = 1)]
+    command: String,
+}
+
 // TODO:
 // * Detect which pages are root pages based on master table.
 fn main() -> Result<()> {
-    // TODO: Switch to clap
-    let args = std::env::args().collect::<Vec<_>>();
-    match args.len() {
-        0 | 1 => bail!("Missing <database path> and <command>"),
-        2 => bail!("Missing <command>"),
-        _ => {}
-    }
+    let args = Args::parse();
 
-    let db_file_path = Path::new(&args[1]);
+    // TODO: Switch to clap
+    // let args = std::env::args().collect::<Vec<_>>();
+    // match args.len() {
+    //     0 | 1 => bail!("Missing <database path> and <command>"),
+    //     2 => bail!("Missing <command>"),
+    //     _ => {}
+    // }
+
+    let db_file_path = Path::new(&args.db_path);
     let db_file = File::open(db_file_path)?;
     let database = Database::open(db_file)?;
 
     // Parse command and act accordingly
-    let command = &args[2];
-    match command.as_str() {
+    let command = args.command;
+
+    match command.as_ref() {
         ".dbinfo" => {
             let (page_size, records) = read_records(database)?;
 
@@ -140,16 +160,20 @@ fn main() -> Result<()> {
             // Aggregate
             // Present
 
-            // "SELECT COUNT(*) FROM apples"
-            // "SELECT name FROM apples"
-            // "SELECT name, color FROM apples"
-            // "SELECT name, color FROM apples WHERE color = 'Yellow'"
-            // "SELECT id, name FROM superheroes WHERE eye_color = 'Pink Eyes'"
-            // "SELECT id, name FROM companies WHERE country = 'eritrea'"
+            let raw_query = command;
 
-            // TODO: New module with these as test cases.
+            // if let (raw_query, query) = parse_query(&raw_query)
+            match parse_query(&raw_query) {
+                Ok((raw_query, query)) => {
+                    //
+                    println!("raw_query: {}", raw_query);
+                    println!("query: {:?}", query);
+                }
 
-            println!("{}", command);
+                Err(err) => {
+                    println!("Error: {:?}", err);
+                }
+            }
         }
     }
 
