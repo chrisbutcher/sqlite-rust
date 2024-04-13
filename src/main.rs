@@ -3,7 +3,6 @@ use sqlite_starter_rust::{header::*, query_parser::*, types::*, varint};
 use std::{
     fs::File,
     io::{prelude::*, Cursor, SeekFrom},
-    os::macos::raw,
     path::Path,
 };
 
@@ -105,7 +104,7 @@ impl Page {
 
 use std::path::PathBuf;
 
-use clap::{arg, command, Parser, Subcommand};
+use clap::{command, Parser};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -297,7 +296,7 @@ fn build_payloads<R: Read + std::io::Seek>(
 
                 let x = u - 35;
                 let m = ((u - 12) * 32 / 255) - 23;
-                let k = m + ((p - m) % (u - 4));
+                let _k = m + ((p - m) % (u - 4));
 
                 // If P<=X then all P bytes of payload are stored directly on the btree page without overflow.
                 // If P>X and K<=X then the first K bytes of P are stored on the btree page and the remaining P-K bytes are stored on overflow pages.
