@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use itertools::Itertools;
 use sqlite_starter_rust::{header::*, query_parser::*, types::*, varint};
 use std::{
     fs::File,
@@ -22,6 +23,15 @@ struct Record {
     row_id: usize,
     serial_types: Vec<SerialType>,
     serial_values: Vec<SerialValue>,
+}
+
+#[derive(Debug)]
+struct TableInfo {
+    table_type: String,
+    name: String,
+    table_name: String,
+    root_page: u32,
+    sql: String,
 }
 
 impl Database {
@@ -147,12 +157,18 @@ fn main() -> Result<()> {
         }
         ".tables" => {
             let (_page_size, records) = read_records(database)?;
-            let table_names = get_table_names(&records).join(" ");
+
+            let master_tables = read_master_tables(&records)?;
+
+            let table_names = master_tables
+                .iter()
+                .map(|t| t.name.clone())
+                .collect_vec()
+                .join(" ");
 
             println!("{table_names}");
-        } //  => bail!("Missing or invalid command passed: {}", command),
+        }
         _ => {
-            // Sanity check that it is surrounded by double quotes (or just do this in nom?)
             // Parse query
             // Plan lookups
             // Execute
@@ -161,11 +177,8 @@ fn main() -> Result<()> {
 
             let raw_query = command;
 
-            // if let (raw_query, query) = parse_query(&raw_query)
             match parse_query(&raw_query) {
-                Ok((raw_query, query)) => {
-                    //
-                    println!("raw_query: {}", raw_query);
+                Ok((_, query)) => {
                     println!("query: {:?}", query);
                 }
 
@@ -190,10 +203,11 @@ fn read_records(mut database: Database) -> anyhow::Result<(u32, Vec<Record>)> {
         &mut database.database_file,
     )?;
 
-    for page_i in 2..=database.page_count {
-        let next_page = database.seek_to_page(page_i)?;
-        println!("page #{page_i}: {:?}", next_page);
-    }
+    // TODO: Read other pages
+    // for page_i in 2..=database.page_count {
+    //     let next_page = database.seek_to_page(page_i)?;
+    //     println!("page #{page_i}: {:?}", next_page);
+    // }
 
     match page.header.page_type {
         sqlite_starter_rust::header::BTreePage::LeafTable => {
@@ -208,22 +222,40 @@ fn read_records(mut database: Database) -> anyhow::Result<(u32, Vec<Record>)> {
     }
 }
 
-fn get_table_names(records: &Vec<Record>) -> Vec<String> {
+fn extract_string(string_serial_value: &SerialValue) -> String {
+    match string_serial_value {
+        SerialValue::String(s) => return s.to_string(),
+        _ => panic!("Unexpected value in extract_string"),
+    }
+}
+
+fn extract_i8(string_serial_value: &SerialValue) -> i8 {
+    match string_serial_value {
+        SerialValue::Int8(i) => return *i,
+        _ => panic!("Unexpected value in extract_i8"),
+    }
+}
+
+fn read_master_tables(records: &Vec<Record>) -> anyhow::Result<Vec<TableInfo>> {
     let mut result = vec![];
 
     for record in records {
-        let table_name_val = &record.serial_values[1];
+        let table_type = extract_string(&record.serial_values[0]);
+        let name = extract_string(&record.serial_values[1]);
+        let table_name = extract_string(&record.serial_values[2]); // Awkward SQLite naming, I know...
+        let root_page = extract_i8(&record.serial_values[3]);
+        let sql = extract_string(&record.serial_values[4]);
 
-        match &table_name_val {
-            SerialValue::String(s) => result.push(s.to_string()),
-            _ => panic!(
-                "reading root page table name failed with table_name_val: {:?}",
-                table_name_val
-            ),
-        }
+        result.push(TableInfo {
+            table_type,
+            name,
+            table_name,
+            root_page: root_page as u32,
+            sql,
+        });
     }
 
-    result
+    Ok(result)
 }
 
 fn build_records(payloads: Vec<(usize, usize, Vec<u8>)>) -> anyhow::Result<Vec<Record>> {
