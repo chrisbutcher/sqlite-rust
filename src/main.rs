@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use itertools::Itertools;
-use sqlite_starter_rust::{header::*, query_parser::*, types::*, varint};
+use sqlite_starter_rust::{header::*, query_parser::*, record, types::*, varint};
 use std::{
     fs::File,
     io::{prelude::*, Cursor, SeekFrom},
@@ -143,23 +143,20 @@ fn main() -> Result<()> {
 
     let db_file_path = Path::new(&args.db_path);
     let db_file = File::open(db_file_path)?;
-    let database = Database::open(db_file)?;
+    let mut database = Database::open(db_file)?;
 
     // Parse command and act accordingly
     let command = args.command;
 
+    let (page_size, records) = read_records(&mut database, 1)?;
+    let master_tables = populate_master_tables(&records)?;
+
     match command.as_ref() {
         ".dbinfo" => {
-            let (page_size, records) = read_records(database)?;
-
             println!("database page size: {}", page_size);
             println!("number of tables: {}", records.len());
         }
         ".tables" => {
-            let (_page_size, records) = read_records(database)?;
-
-            let master_tables = read_master_tables(&records)?;
-
             let table_names = master_tables
                 .iter()
                 .map(|t| t.name.clone())
@@ -180,6 +177,26 @@ fn main() -> Result<()> {
             match parse_query(&raw_query) {
                 Ok((_, query)) => {
                     println!("query: {:?}", query);
+
+                    let table_to_query = master_tables.iter().find(|t| t.name == query.from_table);
+
+                    if let Some(table) = table_to_query {
+                        println!("table to query is: {:?}", table);
+
+                        let (page_size, records) = read_records(&mut database, table.root_page)?;
+
+                        println!("queried records count: {}", records.len());
+                    } else {
+                        panic!("query.from_table not found ({})", query.from_table);
+                    }
+                    // query.from_table
+                    // for table in &master_tables {
+                    //     if table.name == query.from_table {
+
+                    //     }
+                    // }
+
+                    println!("master_tables: {:?}", master_tables);
                 }
 
                 Err(err) => {
@@ -192,8 +209,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn read_records(mut database: Database) -> anyhow::Result<(u32, Vec<Record>)> {
-    let page = database.seek_to_page(1)?;
+fn read_records(database: &mut Database, page_number: u32) -> anyhow::Result<(u32, Vec<Record>)> {
+    let page = database.seek_to_page(page_number)?;
     let cell_pointers = page.fetch_cell_pointers(&mut database.database_file)?;
 
     let payloads = build_payloads(
@@ -236,7 +253,7 @@ fn extract_i8(string_serial_value: &SerialValue) -> i8 {
     }
 }
 
-fn read_master_tables(records: &Vec<Record>) -> anyhow::Result<Vec<TableInfo>> {
+fn populate_master_tables(records: &Vec<Record>) -> anyhow::Result<Vec<TableInfo>> {
     let mut result = vec![];
 
     for record in records {
